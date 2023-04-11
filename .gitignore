@@ -1,0 +1,11 @@
+env.py
+play.ipynb
+.DS_Store
+.ipynb_checkpoints/
+__pycache__
+catboost_info
+*.csv
+*.xlsx
+*.xls
+*.xl
+*.txt
