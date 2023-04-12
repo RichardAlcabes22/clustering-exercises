@@ -258,3 +258,36 @@ def summarize(df):
     print('nulls in dataframe by row: ')
     print(nulls_by_row(df))
     print('=====================================================')
+    
+
+def remove_columns(df, cols_to_remove):
+    '''
+    This function takes in a dataframe 
+    and the columns that need to be dropped
+    then returns the desired dataframe.
+    '''
+    df = df.drop(columns=cols_to_remove)
+    return df
+
+
+def handle_missing_values(df, prop_required_columns=0.5, prop_required_rows=0.75):
+    '''
+    This function takes in a dataframe, the percent of columns and rows
+    that need to have values/non-nulls
+    and returns the dataframe with the desired amount of nulls left.
+    '''
+    column_threshold = int(round(prop_required_columns * len(df.index), 0))
+    df = df.dropna(axis=1, thresh=column_threshold)
+    row_threshold = int(round(prop_required_rows * len(df.columns), 0))
+    df = df.dropna(axis=0, thresh=row_threshold)
+    return df
+
+def data_prep(df, col_to_remove=[], prop_required_columns=0.5, prop_required_rows=0.75):
+    '''
+    This function uses two other functions to remove columns 
+    and desired number of nulls values
+    then returns the cleaned dataframe with acceptable number of nulls.
+    '''
+    df = remove_columns(df, col_to_remove)
+    df = handle_missing_values(df, prop_required_columns, prop_required_rows)
+    return df

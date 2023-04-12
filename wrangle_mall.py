@@ -7,6 +7,7 @@ import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
+
 def acquire_df():
     ''' 
      Acquire data from X schema using env imports, rename columns, and storing a cached version of SQL pull as a .csv.
@@ -28,8 +29,33 @@ def acquire_df():
         df.to_csv('cust.csv',index=True)
         return df
 
-    
-    
+def nulls_by_col(df):
+    '''
+    This function takes in a dataframe 
+    and finds the number of missing values in each column
+    it returns a dataframe with quantity and percent of missing values
+    '''
+    num_missing = df.isnull().sum()
+    percent_miss = num_missing / df.shape[0] * 100
+    cols_missing = pd.DataFrame({'num_rows_missing': num_missing, 'percent_rows_missing': percent_miss})
+    return cols_missing.sort_values(by='num_rows_missing', ascending=False)
+
+def nulls_by_row(df):
+    '''
+    This function takes in a dataframe 
+    and finds the number of missing values in a row
+    it returns a new dataframe with quantity and percent of missing values
+    '''
+    num_missing = df.isnull().sum(axis=1)
+    percent_miss = num_missing / df.shape[1] * 100
+    rows_missing = pd.DataFrame({'num_cols_missing': num_missing, 'percent_cols_missing': percent_miss})
+    rows_missing = df.merge(rows_missing,
+                        left_index=True,
+                        right_index=True)[['num_cols_missing', 'percent_cols_missing']]
+    return rows_missing.sort_values(by='num_cols_missing', ascending=False)
+
+
+
 def summarize(df):
     '''
     summarize will take in a single argument (a pandas dataframe) 
@@ -67,43 +93,10 @@ def summarize(df):
     print(nulls_by_row(df))
     print('=====================================================')
 
-    
+def visualize_outliers(df):
+    ax = sns.boxplot(data=df, orient='h',palette='Set2')
+    return ax
 
-def get_hist(df):
-    ''' Gets histographs of acquired continuous variables'''
-    
-    plt.figure(figsize=(16, 3))
-
-    # List of columns
-    cols = [col for col in df.columns if df[col].dtype != 'O']
-
-    for i, col in enumerate(cols):
-
-        # i starts at 0, but plot nos should start at 1
-        plot_number = i + 1 
-
-        # Create subplot.
-        plt.subplot(1, len(cols), plot_number)
-
-        # Title with column name.
-        plt.title(col)
-
-        # Display histogram for column.
-        df[col].hist(bins=50)
-
-        # Hide gridlines.
-        plt.grid(False)
-
-        # turn off scientific notation
-        plt.ticklabel_format(useOffset=False)
-
-        plt.tight_layout()
-
-    plt.show()
-     
-    
-
-    
 def get_upper_outliers(s, k=1.5):
     '''
     Given a series (ie df.col_name) and a cutoff value, k, returns the upper outliers for the
@@ -127,33 +120,38 @@ def add_upper_outlier_columns(df, k=1.5):
         df[col + '_outliers_upper'] = get_upper_outliers(df[col], k)
     return df
 
-
-
+def remove_outliers(df, k, col_list):
+    ''' Remove outliers from a list of columns in a dataframe 
+        and return that dataframe.  This function takes in a dataframe, a multiplier applied to IQR used to define
+        an outlier (recommend 1.5), and finally a list of columns subjected to the function.
+        
+        Outputs a dataframe with any rows containing outliers in any of the specified columns REMOVED from the
+        input dataframe.
+    '''
     
-def wrangle_student_math(path):
-    df = pd.read_csv(path, sep=";")
-    
-    # drop any nulls
-    df = df[~df.isnull()]
+    for col in col_list:
 
-    # get object column names
-    object_cols = get_object_cols(df)
-    
-    # create dummy vars
-    df = create_dummies(df, object_cols)
-      
-    # split data 
-    X_train, y_train, X_validate, y_validate, X_test, y_test = train_validate_test(df, 'G3')
-    
-    # get numeric column names
-    numeric_cols = get_numeric_X_cols(X_train, object_cols)
+        q1, q3 = df[col].quantile([.25, .75])  # get quartiles
+        
+        iqr = q3 - q1   # calculate interquartile range
+        
+        upper_bound = q3 + k * iqr   # get upper bound
+        lower_bound = q1 - k * iqr   # get lower bound
 
-    # scale data 
-    X_train_scaled, X_validate_scaled, X_test_scaled = min_max_scale(X_train, X_validate, X_test, numeric_cols)
-    
-    return df, X_train, X_train_scaled, y_train, X_validate_scaled, y_validate, X_test_scaled, y_test
+        # return dataframe without outliers
+        
+        df = df[(df[col] > lower_bound) & (df[col] < upper_bound)]
+        
+    return df
 
 
+def train_validate_test(df):
+    # split df into test (20%) and train_validate (80%)
+    train_validate, test = train_test_split(df, test_size=.2, random_state=123)
+
+# split train_validate off into train (70% of 80% = 56%) and validate (30% of 80% = 24%)
+    train, validate = train_test_split(train_validate, test_size=.3, random_state=123)
+    return train, validate,test
 
 def get_object_cols(df):
     '''
@@ -168,9 +166,9 @@ def get_object_cols(df):
     object_cols = df.iloc[:, mask].columns.tolist()
     
     return object_cols
- 
-    
-    
+
+
+
 def create_dummies(df, object_cols):
     '''
     This function takes in a dataframe and list of object column names,
@@ -191,89 +189,6 @@ def create_dummies(df, object_cols):
 
     return df
 
-
-
-def train_validate_test(df, target):
-    '''
-    this function takes in a dataframe and splits it into 3 samples, 
-    a test, which is 20% of the entire dataframe, 
-    a validate, which is 24% of the entire dataframe,
-    and a train, which is 56% of the entire dataframe. 
-    It then splits each of the 3 samples into a dataframe with independent variables
-    and a series with the dependent, or target variable. 
-    The function returns 3 dataframes and 3 series:
-    X_train (df) & y_train (series), X_validate & y_validate, X_test & y_test. 
-    '''
-    # split df into test (20%) and train_validate (80%)
-    train_validate, test = train_test_split(df, test_size=.2, random_state=123)
-
-    # split train_validate off into train (70% of 80% = 56%) and validate (30% of 80% = 24%)
-    train, validate = train_test_split(train_validate, test_size=.3, random_state=123)
-
-        
-    # split train into X (dataframe, drop target) & y (series, keep target only)
-    X_train = train.drop(columns=[target])
-    y_train = train[target]
-    
-    # split validate into X (dataframe, drop target) & y (series, keep target only)
-    X_validate = validate.drop(columns=[target])
-    y_validate = validate[target]
-    
-    # split test into X (dataframe, drop target) & y (series, keep target only)
-    X_test = test.drop(columns=[target])
-    y_test = test[target]
-    
-    return X_train, y_train, X_validate, y_validate, X_test, y_test
-
-
-
-def get_numeric_X_cols(X_train, object_cols):
-    '''
-    takes in a dataframe and list of object column names
-    and returns a list of all other columns names, the non-objects. 
-    '''
-    numeric_cols = [col for col in X_train.columns.values if col not in object_cols]
-    
-    return numeric_cols
-
-
-
-
-def nulls_by_col(df):
-    '''
-    This function takes in a dataframe 
-    and finds the number of missing values in each column
-    it returns a dataframe with quantity and percent of missing values
-    '''
-    num_missing = df.isnull().sum()
-    percent_miss = num_missing / df.shape[0] * 100
-    cols_missing = pd.DataFrame({'num_rows_missing': num_missing, 'percent_rows_missing': percent_miss})
-    return cols_missing.sort_values(by='num_rows_missing', ascending=False)
-
-def nulls_by_row(df):
-    '''
-    This function takes in a dataframe 
-    and finds the number of missing values in a row
-    it returns a new dataframe with quantity and percent of missing values
-    '''
-    num_missing = df.isnull().sum(axis=1)
-    percent_miss = num_missing / df.shape[1] * 100
-    rows_missing = pd.DataFrame({'num_cols_missing': num_missing, 'percent_cols_missing': percent_miss})
-    rows_missing = df.merge(rows_missing,
-                        left_index=True,
-                        right_index=True)[['num_cols_missing', 'percent_cols_missing']]
-    return rows_missing.sort_values(by='num_cols_missing', ascending=False)
-
-def remove_columns(df, cols_to_remove):
-    '''
-    This function takes in a dataframe 
-    and the columns that need to be dropped
-    then returns the desired dataframe.
-    '''
-    df = df.drop(columns=cols_to_remove)
-    return df
-
-
 def handle_missing_values(df, prop_required_columns=0.5, prop_required_rows=0.75):
     '''
     This function takes in a dataframe, the percent of columns and rows
@@ -284,16 +199,6 @@ def handle_missing_values(df, prop_required_columns=0.5, prop_required_rows=0.75
     df = df.dropna(axis=1, thresh=column_threshold)
     row_threshold = int(round(prop_required_rows * len(df.columns), 0))
     df = df.dropna(axis=0, thresh=row_threshold)
-    return df
-
-def data_prep(df, col_to_remove=[], prop_required_columns=0.5, prop_required_rows=0.75):
-    '''
-    This function uses two other functions to remove columns 
-    and desired number of nulls values
-    then returns the cleaned dataframe with acceptable number of nulls.
-    '''
-    df = remove_columns(df, col_to_remove)
-    df = handle_missing_values(df, prop_required_columns, prop_required_rows)
     return df
 
 def min_max_scale(X_train, X_validate, X_test, numeric_cols):
@@ -331,5 +236,3 @@ def min_max_scale(X_train, X_validate, X_test, numeric_cols):
 
     
     return X_train_scaled, X_validate_scaled, X_test_scaled
-
-
